@@ -5,21 +5,17 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 
 	"github.com/suzuki-shunsuke/cmdx/pkg/config"
 	"github.com/suzuki-shunsuke/cmdx/pkg/domain"
 	action "github.com/suzuki-shunsuke/cmdx/pkg/task-action"
-	"github.com/suzuki-shunsuke/cmdx/pkg/tmpl"
-	"github.com/suzuki-shunsuke/cmdx/pkg/validate"
 	"github.com/urfave/cli/v2"
 )
 
 const (
-	boolFlagType   = "bool"
-	defaultTimeout = 36000 // default 10H
+	boolFlagType = "bool"
 
 	rootHelp = `# yaml-language-server: $schema=https://raw.githubusercontent.com/suzuki-shunsuke/cmdx/refs/heads/main/json-schema/cmdx.json
 cmdx - task runner https://github.com/suzuki-shunsuke/cmdx
@@ -71,7 +67,6 @@ func Main(flags *LDFlags, args []string) error {
 
 func mainAction(flags *LDFlags, args []string) func(*cli.Context) error {
 	return func(c *cli.Context) error {
-		cfg := domain.Config{}
 		cfgFilePath := c.String("config")
 		initFlag := c.Bool("init")
 		listFlag := c.Bool("list")
@@ -107,14 +102,10 @@ func mainAction(flags *LDFlags, args []string) func(*cli.Context) error {
 			}
 		}
 
-		if err := cfgClient.Read(cfgFilePath, &cfg); err != nil {
-			return err
-		}
-		if err := validate.Config(&cfg); err != nil {
-			return fmt.Errorf("please fix the configuration file: %w", err)
-		}
-
-		if err := setupConfig(&cfg); err != nil {
+		// The whole include graph is read, parsed, initialized and
+		// validated before any list or CLI command is registered.
+		cfg, err := cfgClient.Load(cfgFilePath)
+		if err != nil {
 			return err
 		}
 
@@ -133,15 +124,14 @@ func mainAction(flags *LDFlags, args []string) func(*cli.Context) error {
 
 		app := cli.NewApp()
 		setupApp(app, flags)
-		if workingDirFlag == "" {
-			workingDirFlag = filepath.Dir(cfgFilePath)
-		}
+		// If workingDirFlag is empty, each task is run in the directory of
+		// the configuration file that declares the task.
 		var quiet *bool
 		if c.IsSet("quiet") {
 			q := c.Bool("quiet")
 			quiet = &q
 		}
-		updateAppWithConfig(app, &cfg, &domain.GlobalFlags{
+		updateAppWithConfig(app, cfg, &domain.GlobalFlags{
 			DryRun:     c.Bool("dry-run"),
 			Quiet:      quiet,
 			WorkingDir: workingDirFlag,
@@ -343,142 +333,4 @@ func updateAppWithConfig(app *cli.App, cfg *domain.Config, gFlags *domain.Global
 		cmds[i] = convertTaskToCommand(task, gFlags)
 	}
 	app.Commands = cmds
-}
-
-func setupEnvs(envs []string, name string) ([]string, error) {
-	arr := make([]string, len(envs))
-	for i, env := range envs {
-		e, err := tmpl.RenderTemplate(env, map[string]string{
-			"name": name,
-		})
-		if err != nil {
-			return nil, err
-		}
-		arr[i] = strings.ToUpper(strings.ReplaceAll(e, "-", "_"))
-	}
-	return arr, nil
-}
-
-func setupTask(task, base *domain.Task) error {
-	inputEnvs := task.InputEnvs
-	if len(inputEnvs) == 0 {
-		inputEnvs = base.InputEnvs
-	}
-
-	if task.Quiet == nil {
-		task.Quiet = base.Quiet
-	}
-
-	scriptEnvs := task.ScriptEnvs
-	if len(scriptEnvs) == 0 {
-		scriptEnvs = base.ScriptEnvs
-	}
-
-	if task.Environment == nil {
-		task.Environment = map[string]string{}
-	}
-	for k, v := range base.Environment {
-		if _, ok := task.Environment[k]; !ok {
-			task.Environment[k] = v
-		}
-	}
-
-	if task.Timeout.Duration == 0 {
-		if base.Timeout.Duration == 0 {
-			task.Timeout.Duration = defaultTimeout
-		} else {
-			task.Timeout.Duration = base.Timeout.Duration
-		}
-	}
-
-	if task.Timeout.KillAfter == 0 {
-		task.Timeout.KillAfter = base.Timeout.KillAfter
-	}
-
-	for j, flag := range task.Flags {
-		if len(flag.InputEnvs) == 0 {
-			flag.InputEnvs = inputEnvs
-		}
-		envs, err := setupEnvs(flag.InputEnvs, flag.Name)
-		if err != nil {
-			return err
-		}
-		flag.InputEnvs = envs
-
-		if len(flag.ScriptEnvs) == 0 {
-			flag.ScriptEnvs = scriptEnvs
-		}
-		envs, err = setupEnvs(flag.ScriptEnvs, flag.Name)
-		if err != nil {
-			return err
-		}
-		flag.ScriptEnvs = envs
-		if flag.Prompt.Type != "" {
-			if flag.Prompt.Message == "" {
-				flag.Prompt.Message = flag.Name
-			}
-		}
-
-		task.Flags[j] = flag
-	}
-
-	for j, arg := range task.Args {
-		if len(arg.InputEnvs) == 0 {
-			arg.InputEnvs = inputEnvs
-		}
-		envs, err := setupEnvs(arg.InputEnvs, arg.Name)
-		if err != nil {
-			return err
-		}
-		arg.InputEnvs = envs
-
-		if len(arg.ScriptEnvs) == 0 {
-			arg.ScriptEnvs = scriptEnvs
-		}
-		envs, err = setupEnvs(arg.ScriptEnvs, arg.Name)
-		if err != nil {
-			return err
-		}
-		arg.ScriptEnvs = envs
-
-		if arg.Prompt.Type != "" {
-			if arg.Prompt.Message == "" {
-				arg.Prompt.Message = arg.Name
-			}
-		}
-
-		task.Args[j] = arg
-	}
-
-	task.Require.Exec = append(task.Require.Exec, base.Require.Exec...)
-	task.Require.Environment = append(task.Require.Environment, base.Require.Environment...)
-
-	if len(task.Tasks) != 0 {
-		for i, t := range task.Tasks {
-			if err := setupTask(&t, task); err != nil {
-				return err
-			}
-			task.Tasks[i] = t
-		}
-		return nil
-	}
-
-	return nil
-}
-
-func setupConfig(cfg *domain.Config) error {
-	base := &domain.Task{
-		InputEnvs:   cfg.InputEnvs,
-		Quiet:       cfg.Quiet,
-		ScriptEnvs:  cfg.ScriptEnvs,
-		Environment: cfg.Environment,
-		Timeout:     cfg.Timeout,
-	}
-	for i, task := range cfg.Tasks {
-		if err := setupTask(&task, base); err != nil {
-			return err
-		}
-		cfg.Tasks[i] = task
-	}
-	return nil
 }

@@ -39,6 +39,12 @@ type Task struct {
 	Quiet       *bool             `json:"quiet,omitempty"`
 	Shell       []string          `json:"shell,omitempty"`
 	Tasks       []Task            `json:"tasks,omitempty"`
+
+	// WorkingDir is the directory where the task is run by default.
+	// It is set by the configuration loader to the directory of the
+	// configuration file that declares the task, so it isn't read from
+	// the configuration file and isn't included in the JSON Schema.
+	WorkingDir string `json:"-" yaml:"-"`
 }
 
 type Arg struct {
@@ -64,6 +70,7 @@ type Timeout struct {
 
 type Config struct {
 	Tasks       []Task            `json:"tasks"`
+	Includes    []string          `json:"includes,omitempty" yaml:"includes"`
 	InputEnvs   []string          `json:"input_envs,omitempty" yaml:"input_envs"`
 	ScriptEnvs  []string          `json:"script_envs,omitempty" yaml:"script_envs"`
 	Environment map[string]string `json:"environment,omitempty"`

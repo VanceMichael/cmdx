@@ -74,11 +74,18 @@ func NewCommandAction(
 
 		exc := execute.New()
 
+		// An explicit --working-dir overrides the working directory of the
+		// configuration file that declares the task.
+		workingDir := gFlags.WorkingDir
+		if workingDir == "" {
+			workingDir = task.WorkingDir
+		}
+
 		return exc.Run(
 			c.Context, &execute.Params{
 				Shell:      task.Shell,
 				Script:     scr,
-				WorkingDir: gFlags.WorkingDir,
+				WorkingDir: workingDir,
 				Envs:       envs,
 				Timeout: &execute.Timeout{
 					Duration:  time.Duration(task.Timeout.Duration) * time.Second,

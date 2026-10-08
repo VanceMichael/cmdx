@@ -53,6 +53,12 @@
           },
           "type": "array"
         },
+        "includes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "input_envs": {
           "items": {
             "type": "string"
