@@ -52,6 +52,20 @@ tasks:
   timeout:
     duration: 3
     kill_after: 3
+- name: retry
+  # retry up to 3 times (including the first execution)
+  # wait 1 second before the 2nd attempt, 2 seconds before the 3rd
+  script: |
+    n=0
+    [ -f /tmp/cmdx-retry-count ] && n=$(cat /tmp/cmdx-retry-count)
+    n=$((n + 1))
+    echo "$n" > /tmp/cmdx-retry-count
+    echo "attempt $n"
+    [ "$n" -ge 3 ]
+  retry:
+    attempts: 3
+    delay: 1
+    backoff: 2
 - name: input
   script: "echo {{.name}}"
   flags:

@@ -295,6 +295,65 @@ func Test_setupTask(t *testing.T) {
 	}
 }
 
+func Test_setupTask_Retry(t *testing.T) {
+	t.Parallel()
+	topRetry := &domain.Retry{
+		Attempts: 5,
+		Delay:    10,
+		Backoff: floatPtrForHandler(2),
+	}
+
+	t.Run("a task inherits the base retry policy", func(t *testing.T) {
+		t.Parallel()
+		task := &domain.Task{Name: valFoo}
+		base := &domain.Task{Retry: topRetry}
+		require.NoError(t, setupTask(task, base))
+		assert.Equal(t, topRetry, task.Retry)
+	})
+
+	t.Run("a task's own retry policy replaces the inherited one as a whole", func(t *testing.T) {
+		t.Parallel()
+		taskRetry := &domain.Retry{Attempts: 2}
+		task := &domain.Task{Name: valFoo, Retry: taskRetry}
+		base := &domain.Task{Retry: topRetry}
+		require.NoError(t, setupTask(task, base))
+		// Fields aren't merged, so Delay and Backoff remain zero values.
+		assert.Equal(t, &domain.Retry{Attempts: 2}, task.Retry)
+	})
+
+	t.Run("a nested task inherits the parent's effective retry policy", func(t *testing.T) {
+		t.Parallel()
+		task := &domain.Task{
+			Name: valFoo,
+			Tasks: []domain.Task{
+				{Name: valBar, Script: "echo bar"},
+			},
+		}
+		base := &domain.Task{Retry: topRetry}
+		require.NoError(t, setupTask(task, base))
+		assert.Equal(t, topRetry, task.Tasks[0].Retry)
+	})
+}
+
+func floatPtrForHandler(v float64) *float64 {
+	return &v
+}
+
+func Test_setupConfig_Retry(t *testing.T) {
+	t.Parallel()
+	topRetry := &domain.Retry{Attempts: 3}
+	cfg := &domain.Config{
+		Retry: topRetry,
+		Tasks: []domain.Task{
+			{Name: valFoo, Script: "echo foo"},
+			{Name: valBar, Script: "echo bar", Retry: &domain.Retry{Attempts: 1}},
+		},
+	}
+	require.NoError(t, setupConfig(cfg))
+	assert.Equal(t, topRetry, cfg.Tasks[0].Retry)
+	assert.Equal(t, &domain.Retry{Attempts: 1}, cfg.Tasks[1].Retry)
+}
+
 func Test_setupConfig(t *testing.T) {
 	data := []struct {
 		title string

@@ -18,6 +18,9 @@ var flagTypes = map[string]struct{}{ //nolint:gochecknoglobals
 }
 
 func Config(cfg *domain.Config) error {
+	if err := vRetry(cfg.Retry, "the top level"); err != nil {
+		return err
+	}
 	taskNames := make(map[string]struct{}, len(cfg.Tasks))
 	taskShortNames := make(map[string]struct{}, len(cfg.Tasks))
 	for _, task := range cfg.Tasks {
@@ -33,6 +36,35 @@ func Config(cfg *domain.Config) error {
 		if err := vTask(task); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// vRetry validates the retry policy before any task command is run.
+// where is used to identify where the invalid policy is defined.
+func vRetry(retry *domain.Retry, where string) error {
+	if retry == nil {
+		return nil
+	}
+	if retry.Attempts < 0 {
+		return fmt.Errorf(
+			"%s retry.attempts must be greater than or equal to 0: %d",
+			where, retry.Attempts)
+	}
+	if retry.Delay < 0 {
+		return fmt.Errorf(
+			"%s retry.delay must be greater than or equal to 0: %d",
+			where, retry.Delay)
+	}
+	if retry.MaxDelay < 0 {
+		return fmt.Errorf(
+			"%s retry.max_delay must be greater than or equal to 0: %d",
+			where, retry.MaxDelay)
+	}
+	if retry.Backoff != nil && *retry.Backoff < 1 {
+		return fmt.Errorf(
+			"%s retry.backoff must be greater than or equal to 1: %g",
+			where, *retry.Backoff)
 	}
 	return nil
 }
@@ -123,6 +155,9 @@ func vTask(task domain.Task) error {
 		if task.Script != "" {
 			return errors.New("the task `" + task.Name + "` is invalid. when sub tasks are set, 'script' can't be set")
 		}
+	}
+	if err := vRetry(task.Retry, `the task "`+task.Name+`"`); err != nil {
+		return err
 	}
 	for _, t := range task.Tasks {
 		if err := vTask(t); err != nil {

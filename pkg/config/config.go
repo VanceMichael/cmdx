@@ -16,6 +16,13 @@ const configurationFileTemplate = `---
 # timeout:
 #   duration: 600
 #   kill_after: 30
+# retry:
+#   attempts: 3
+#   delay: 1
+#   backoff: 2
+#   max_delay: 30
+#   exit_codes:
+#   - 2
 # input_envs:
 # - "{{.name}}"
 # script_envs:

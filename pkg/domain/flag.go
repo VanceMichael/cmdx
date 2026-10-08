@@ -35,6 +35,7 @@ type Task struct {
 	Environment map[string]string `json:"environment,omitempty"`
 	Script      string            `json:"script,omitempty"`
 	Timeout     Timeout           `json:"timeout,omitzero"`
+	Retry       *Retry            `json:"retry,omitempty"`
 	Require     Require           `json:"require,omitzero"`
 	Quiet       *bool             `json:"quiet,omitempty"`
 	Shell       []string          `json:"shell,omitempty"`
@@ -62,12 +63,24 @@ type Timeout struct {
 	KillAfter int `json:"kill_after,omitempty" yaml:"kill_after"`
 }
 
+// Retry is the policy to retry the task command.
+// Attempts is the total number of attempts including the first execution.
+// The zero value (nil or Attempts 0) means the command is run only once.
+type Retry struct {
+	Attempts  int       `json:"attempts,omitempty"`
+	Delay     int       `json:"delay,omitempty"`
+	Backoff   *float64  `json:"backoff,omitempty"`
+	MaxDelay  int       `json:"max_delay,omitempty" yaml:"max_delay"`
+	ExitCodes []int     `json:"exit_codes,omitempty" yaml:"exit_codes"`
+}
+
 type Config struct {
 	Tasks       []Task            `json:"tasks"`
 	InputEnvs   []string          `json:"input_envs,omitempty" yaml:"input_envs"`
 	ScriptEnvs  []string          `json:"script_envs,omitempty" yaml:"script_envs"`
 	Environment map[string]string `json:"environment,omitempty"`
 	Timeout     Timeout           `json:"timeout,omitzero"`
+	Retry       *Retry            `json:"retry,omitempty"`
 	Quiet       *bool             `json:"quiet,omitempty"`
 }
 

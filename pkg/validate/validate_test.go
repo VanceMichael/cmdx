@@ -277,6 +277,169 @@ func Test_vArg(t *testing.T) {
 	}
 }
 
+func floatPtr(v float64) *float64 {
+	return &v
+}
+
+func Test_vRetry(t *testing.T) {
+	data := []struct {
+		title string
+		retry *domain.Retry
+		isErr bool
+	}{
+		{title: "nil"},
+		{
+			title: "normal",
+			retry: &domain.Retry{
+				Attempts:  3,
+				Delay:     1,
+				Backoff:   floatPtr(2),
+				MaxDelay:  30,
+				ExitCodes: []int{2, 3},
+			},
+		},
+		{
+			title: "backoff is omitted",
+			retry: &domain.Retry{
+				Attempts: 3,
+			},
+		},
+		{
+			title: "zero attempts means a single execution",
+			retry: &domain.Retry{
+				Attempts: 0,
+			},
+		},
+		{
+			title: "negative attempts",
+			retry: &domain.Retry{
+				Attempts: -1,
+			},
+			isErr: true,
+		},
+		{
+			title: "negative delay",
+			retry: &domain.Retry{
+				Attempts: 3,
+				Delay:    -1,
+			},
+			isErr: true,
+		},
+		{
+			title: "negative max delay",
+			retry: &domain.Retry{
+				Attempts: 3,
+				MaxDelay: -1,
+			},
+			isErr: true,
+		},
+		{
+			title: "backoff is less than 1",
+			retry: &domain.Retry{
+				Attempts: 3,
+				Backoff:  floatPtr(0.5),
+			},
+			isErr: true,
+		},
+		{
+			title: "backoff equals 1",
+			retry: &domain.Retry{
+				Attempts: 3,
+				Backoff:  floatPtr(1),
+			},
+		},
+	}
+	for _, d := range data {
+		t.Run(d.title, func(t *testing.T) {
+			t.Parallel()
+			err := vRetry(d.retry, "the top level")
+			if d.isErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+		})
+	}
+}
+
+func TestConfig_Retry(t *testing.T) {
+	data := []struct {
+		title string
+		cfg   *domain.Config
+		isErr bool
+	}{
+		{
+			title: "the top level retry policy is valid",
+			cfg: &domain.Config{
+				Retry: &domain.Retry{
+					Attempts: 3,
+				},
+				Tasks: []domain.Task{
+					{
+						Name:   testValFoo,
+						Script: testValPwd,
+					},
+				},
+			},
+		},
+		{
+			title: "the top level retry policy is invalid",
+			cfg: &domain.Config{
+				Retry: &domain.Retry{
+					Attempts: -1,
+				},
+			},
+			isErr: true,
+		},
+		{
+			title: "the task retry policy is invalid",
+			cfg: &domain.Config{
+				Tasks: []domain.Task{
+					{
+						Name:   testValFoo,
+						Script: testValPwd,
+						Retry: &domain.Retry{
+							Delay: -1,
+						},
+					},
+				},
+			},
+			isErr: true,
+		},
+		{
+			title: "the nested task retry policy is invalid",
+			cfg: &domain.Config{
+				Tasks: []domain.Task{
+					{
+						Name: testValFoo,
+						Tasks: []domain.Task{
+							{
+								Name:   testValBar,
+								Script: testValPwd,
+								Retry: &domain.Retry{
+									Backoff: floatPtr(0.1),
+								},
+							},
+						},
+					},
+				},
+			},
+			isErr: true,
+		},
+	}
+	for _, d := range data {
+		t.Run(d.title, func(t *testing.T) {
+			t.Parallel()
+			err := Config(d.cfg)
+			if d.isErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+		})
+	}
+}
+
 func Test_vTask(t *testing.T) {
 	data := []struct {
 		title string

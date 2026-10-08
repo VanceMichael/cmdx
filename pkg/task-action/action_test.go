@@ -2,9 +2,11 @@ package action
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/suzuki-shunsuke/cmdx/pkg/domain"
+	"github.com/suzuki-shunsuke/cmdx/pkg/execute"
 )
 
 const (
@@ -12,6 +14,41 @@ const (
 	valBar      = "bar"
 	valFooValue = "foo-value"
 )
+
+func Test_newRetryPolicy(t *testing.T) {
+	t.Parallel()
+	t.Run("nil policy", func(t *testing.T) {
+		t.Parallel()
+		assert.Nil(t, newRetryPolicy(nil))
+	})
+
+	t.Run("backoff defaults to 1 and values are converted in seconds", func(t *testing.T) {
+		t.Parallel()
+		policy := newRetryPolicy(&domain.Retry{
+			Attempts:  3,
+			Delay:     1,
+			MaxDelay:  30,
+			ExitCodes: []int{2, 3},
+		})
+		assert.Equal(t, &execute.Retry{
+			Attempts:  3,
+			Delay:     time.Second,
+			Backoff:   1,
+			MaxDelay:  30 * time.Second,
+			ExitCodes: []int{2, 3},
+		}, policy)
+	})
+
+	t.Run("an explicit backoff is used as is", func(t *testing.T) {
+		t.Parallel()
+		backoff := 2.5
+		policy := newRetryPolicy(&domain.Retry{
+			Attempts: 2,
+			Backoff:  &backoff,
+		})
+		assert.Equal(t, 2.5, policy.Backoff)
+	})
+}
 
 func Test_updateVarsByArgs(t *testing.T) {
 	data := []struct {

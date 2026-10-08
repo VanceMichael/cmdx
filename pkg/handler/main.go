@@ -369,6 +369,11 @@ func setupTask(task, base *domain.Task) error {
 		task.Quiet = base.Quiet
 	}
 
+	// A task's own retry policy replaces the inherited one as a whole.
+	if task.Retry == nil {
+		task.Retry = base.Retry
+	}
+
 	scriptEnvs := task.ScriptEnvs
 	if len(scriptEnvs) == 0 {
 		scriptEnvs = base.ScriptEnvs
@@ -473,6 +478,7 @@ func setupConfig(cfg *domain.Config) error {
 		ScriptEnvs:  cfg.ScriptEnvs,
 		Environment: cfg.Environment,
 		Timeout:     cfg.Timeout,
+		Retry:       cfg.Retry,
 	}
 	for i, task := range cfg.Tasks {
 		if err := setupTask(&task, base); err != nil {

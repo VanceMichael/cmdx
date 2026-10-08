@@ -74,6 +74,9 @@
         "timeout": {
           "$ref": "#/$defs/Timeout"
         },
+        "retry": {
+          "$ref": "#/$defs/Retry"
+        },
         "quiet": {
           "type": "boolean"
         }
@@ -174,6 +177,30 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "Retry": {
+      "properties": {
+        "attempts": {
+          "type": "integer"
+        },
+        "delay": {
+          "type": "integer"
+        },
+        "backoff": {
+          "type": "number"
+        },
+        "max_delay": {
+          "type": "integer"
+        },
+        "exit_codes": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "StrList": {
       "oneOf": [
         {
@@ -236,6 +263,9 @@
         },
         "timeout": {
           "$ref": "#/$defs/Timeout"
+        },
+        "retry": {
+          "$ref": "#/$defs/Retry"
         },
         "require": {
           "$ref": "#/$defs/Require"

@@ -152,6 +152,7 @@ Please see [examples](examples).
 path | type | description | required | default
 --- | --- | --- | --- | ---
 .timeout | timeout | the task command timeout | false |
+.retry | retry | the top level retry policy, which is inherited by tasks | false |
 .input_envs | []string | default environment variable binding | false | []
 .script_envs | []string | default environment variable binding | false | []
 .environment | map[string]string | top level environment variables | false | {}
@@ -170,6 +171,7 @@ task.script | string | the task command. This is run by `task.shell` | true |
 task.quiet | bool | task level default configuration whether the content of script is outputted | false |
 task.shell | []string | shell command to run the script | `["bash", "-euo", "pipefail", "-c"]` (falls back to `["sh", "-c"]` if bash isn't available)
 task.timeout | timeout | the task command timeout | false |
+task.retry | retry | the task retry policy. If set, it replaces the inherited policy as a whole | false |
 task.require | require | requirement of task | false | {}
 task.tasks | []task | sub tasks | false | `[]`
 require.exec | []stringArray | required executable files | false | []
@@ -177,6 +179,11 @@ require.environment | []stringArray | required environment variables | false | [
 stringArray | array whose element is string or array of string | |
 timeout.duration | int | the task command timeout (second) | false | 36000 (10 hours)
 timeout.kill_after | int | the duration the kill signal is sent after `timeout.duration` | false | 0, which means the command isn't killed
+retry.attempts | int | the total number of attempts including the first execution. `0` means the command is run only once | false | 1
+retry.delay | int | the waiting time before a retry (second) | false | 0
+retry.backoff | float | the multiplier applied to `retry.delay` after each failed attempt | false | 1
+retry.max_delay | int | the upper limit of the delay (second). `0` means no limit | false | 0
+retry.exit_codes | []int | the non-zero exit codes to retry. An empty list means any non-zero exit code is retried | false | any non-zero exit code
 flag.name | string | the flag name | true |
 flag.short | string | the flag short name | false |
 flag.usage | string | the flag usage | false | ""
@@ -338,6 +345,65 @@ timeout:
 tasks:
 - name: foo # the timeout.duration is 3
   script: sleep 100
+```
+
+### retry
+
+`cmdx` retries the task command when it fails.
+
+- `retry.attempts` is the total number of attempts including the first execution.
+  If `retry` isn't set or `retry.attempts` is `0`, the command is run only once.
+- After a failed attempt, `cmdx` waits `retry.delay` seconds, then multiplies the next delay by `retry.backoff`,
+  up to `retry.max_delay` seconds.
+- Only a command that actually starts and exits with a non-zero code is retried.
+  Configuration errors, requirement errors, prompts, template rendering errors, and process launch errors aren't retried.
+- An empty `retry.exit_codes` means any non-zero exit code is retried.
+  If the list is set, only the listed exit codes are retried.
+- Each attempt starts a new process and gets the full `timeout.duration` and `timeout.kill_after`.
+  The arguments, environment variables, and rendered script are the same across attempts.
+- `cmdx` stops retrying as soon as the command succeeds, and when all attempts are exhausted it exits with the last command's exit code.
+- The waiting time obeys the context, so when `cmdx` is canceled while the command is running or while waiting, no new attempt is started.
+- With `--dry-run` (`-d`), the script is printed only once: `cmdx` doesn't wait and doesn't run the command.
+
+For example, the following task `foo` is run up to 3 times, and retried only when the exit code is `2` or `3`.
+The delay before the second attempt is 1 second, and the delay before the third attempt is 2 seconds.
+
+```yaml
+tasks:
+- name: foo
+  script: curl -f http://example.com
+  retry:
+    attempts: 3
+    delay: 1
+    backoff: 2
+    exit_codes:
+    - 2
+    - 3
+```
+
+```console
+$ cmdx foo
++ curl -f http://example.com
+# attempt 1/3
+command failed with exit code 2; retrying in 1s (attempt 2/3)
+# attempt 2/3
+command failed with exit code 2; retrying in 2s (attempt 3/3)
+# attempt 3/3
+```
+
+The task retry configuration inherits the top level retry configuration.
+If a task sets its own `retry`, it replaces the inherited policy as a whole (fields aren't merged).
+
+```yaml
+retry:
+  attempts: 3
+tasks:
+- name: foo # the retry policy is inherited
+  script: curl -f http://example.com
+- name: bar # the top level policy isn't used; bar is run up to 5 times with no delay
+  script: curl -f http://example.com
+  retry:
+    attempts: 5
 ```
 
 ### require
@@ -604,6 +670,7 @@ The following attributes are inherited from the parent tasks.
 * quiet
 * environment
 * timeout
+* retry
 * requires
 
 For example,

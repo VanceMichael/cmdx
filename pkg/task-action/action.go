@@ -84,10 +84,30 @@ func NewCommandAction(
 					Duration:  time.Duration(task.Timeout.Duration) * time.Second,
 					KillAfter: time.Duration(task.Timeout.KillAfter) * time.Second,
 				},
+				Retry:  newRetryPolicy(task.Retry),
 				Quiet:  quiet,
 				DryRun: gFlags.DryRun,
 			})
 	}
+}
+
+// newRetryPolicy converts the task retry policy into the executor policy.
+// The policy has already been validated and inherited by setupConfig.
+func newRetryPolicy(retry *domain.Retry) *execute.Retry {
+	if retry == nil {
+		return nil
+	}
+	policy := &execute.Retry{
+		Attempts:  retry.Attempts,
+		Delay:     time.Duration(retry.Delay) * time.Second,
+		Backoff:   1,
+		MaxDelay:  time.Duration(retry.MaxDelay) * time.Second,
+		ExitCodes: retry.ExitCodes,
+	}
+	if retry.Backoff != nil {
+		policy.Backoff = *retry.Backoff
+	}
+	return policy
 }
 
 func updateVarsByArgs(
