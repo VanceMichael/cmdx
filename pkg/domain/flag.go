@@ -8,6 +8,9 @@ type GlobalFlags struct {
 	DryRun     bool
 	Quiet      *bool
 	WorkingDir string
+	// ConfigPath is the canonical root configuration file path, used to
+	// determine the concurrency lock file path.
+	ConfigPath string
 }
 
 type Flag struct {
@@ -35,6 +38,7 @@ type Task struct {
 	Environment map[string]string `json:"environment,omitempty"`
 	Script      string            `json:"script,omitempty"`
 	Timeout     Timeout           `json:"timeout,omitzero"`
+	Concurrency Concurrency       `json:"concurrency,omitzero"`
 	Require     Require           `json:"require,omitzero"`
 	Quiet       *bool             `json:"quiet,omitempty"`
 	Shell       []string          `json:"shell,omitempty"`
@@ -62,12 +66,24 @@ type Timeout struct {
 	KillAfter int `json:"kill_after,omitempty" yaml:"kill_after"`
 }
 
+// Concurrency is the configuration to prevent tasks from running concurrently.
+// Group is rendered with the same template data as task.script after flags,
+// arguments, prompts and input environment variables are resolved.
+// WaitTimeout is the maximum time in seconds to wait for the lock. It is a
+// pointer so that an unset value inherits the parent policy while an explicit
+// zero means failing immediately when another process holds the lock.
+type Concurrency struct {
+	Group       string `json:"group,omitempty"`
+	WaitTimeout *int   `json:"wait_timeout,omitempty" yaml:"wait_timeout"`
+}
+
 type Config struct {
 	Tasks       []Task            `json:"tasks"`
 	InputEnvs   []string          `json:"input_envs,omitempty" yaml:"input_envs"`
 	ScriptEnvs  []string          `json:"script_envs,omitempty" yaml:"script_envs"`
 	Environment map[string]string `json:"environment,omitempty"`
 	Timeout     Timeout           `json:"timeout,omitzero"`
+	Concurrency Concurrency       `json:"concurrency,omitzero"`
 	Quiet       *bool             `json:"quiet,omitempty"`
 }
 

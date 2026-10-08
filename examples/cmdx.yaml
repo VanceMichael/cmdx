@@ -119,3 +119,14 @@ tasks:
       type: confirm
     script_envs:
     - CONFIRM
+- name: deploy
+  description: deploy the environment. Only one deploy per environment runs at a time
+  usage: deploy the environment
+  script: "echo deploying to {{.env}}"
+  args:
+  - name: env
+    usage: target environment
+    default: staging
+  concurrency:
+    group: "deploy-{{.env}}"
+    wait_timeout: 0

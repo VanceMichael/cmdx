@@ -10,16 +10,18 @@ import (
 )
 
 const (
-	envFOO         = "FOO"
-	envBAR         = "BAR"
-	valBar         = "bar"
-	valFoo         = "foo"
-	valUsage       = "usage"
-	valTest        = "test"
-	valDescription = "description"
-	titleNormal    = "normal"
-	valHello       = "hello"
-	valEnv         = "env"
+	envFOO              = "FOO"
+	envBAR              = "BAR"
+	valBar              = "bar"
+	valFoo              = "foo"
+	valUsage            = "usage"
+	valTest             = "test"
+	valDescription      = "description"
+	titleNormal         = "normal"
+	valHello            = "hello"
+	valEnv              = "env"
+	concurrencyGroup    = "deploy"
+	concurrencyGroupTpl = "deploy-{{.env}}"
 )
 
 func Test_setupApp(t *testing.T) {
@@ -278,6 +280,74 @@ func Test_setupTask(t *testing.T) {
 				},
 			},
 		},
+		{
+			title: "concurrency is inherited from the base task",
+			task:  &domain.Task{},
+			base: &domain.Task{
+				Concurrency: domain.Concurrency{
+					Group:       concurrencyGroup,
+					WaitTimeout: new(30),
+				},
+			},
+			exp: &domain.Task{
+				Timeout: domain.Timeout{
+					Duration: defaultTimeout,
+				},
+				Environment: map[string]string{},
+				Concurrency: domain.Concurrency{
+					Group:       concurrencyGroup,
+					WaitTimeout: new(30),
+				},
+			},
+		},
+		{
+			title: "the task level concurrency overrides inherited values field by field",
+			task: &domain.Task{
+				Concurrency: domain.Concurrency{
+					Group: concurrencyGroupTpl,
+				},
+			},
+			base: &domain.Task{
+				Concurrency: domain.Concurrency{
+					Group:       concurrencyGroup,
+					WaitTimeout: new(30),
+				},
+			},
+			exp: &domain.Task{
+				Timeout: domain.Timeout{
+					Duration: defaultTimeout,
+				},
+				Environment: map[string]string{},
+				Concurrency: domain.Concurrency{
+					Group:       "deploy-{{.env}}",
+					WaitTimeout: new(30),
+				},
+			},
+		},
+		{
+			title: "an explicit wait_timeout zero overrides the inherited value",
+			task: &domain.Task{
+				Concurrency: domain.Concurrency{
+					WaitTimeout: new(0),
+				},
+			},
+			base: &domain.Task{
+				Concurrency: domain.Concurrency{
+					Group:       concurrencyGroup,
+					WaitTimeout: new(30),
+				},
+			},
+			exp: &domain.Task{
+				Timeout: domain.Timeout{
+					Duration: defaultTimeout,
+				},
+				Environment: map[string]string{},
+				Concurrency: domain.Concurrency{
+					Group:       concurrencyGroup,
+					WaitTimeout: new(0),
+				},
+			},
+		},
 	}
 	for _, d := range data {
 		t.Run(d.title, func(t *testing.T) {
@@ -293,6 +363,40 @@ func Test_setupTask(t *testing.T) {
 			assert.Equal(t, d.exp, d.task)
 		})
 	}
+}
+
+func Test_setupTask_concurrencyNested(t *testing.T) {
+	parent := domain.Task{
+		Concurrency: domain.Concurrency{
+			Group:       "deploy-{{.env}}",
+			WaitTimeout: new(15),
+		},
+		Tasks: []domain.Task{
+			{
+				Name: "child",
+				Concurrency: domain.Concurrency{
+					WaitTimeout: new(45),
+				},
+				Tasks: []domain.Task{
+					{
+						Name:   "grandchild",
+						Script: "echo hello",
+					},
+				},
+			},
+		},
+	}
+	require.NoError(t, setupTask(&parent, &domain.Task{}))
+
+	child := parent.Tasks[0]
+	assert.Equal(t, "deploy-{{.env}}", child.Concurrency.Group)
+	require.NotNil(t, child.Concurrency.WaitTimeout)
+	assert.Equal(t, 45, *child.Concurrency.WaitTimeout)
+
+	grandchild := child.Tasks[0]
+	assert.Equal(t, "deploy-{{.env}}", grandchild.Concurrency.Group)
+	require.NotNil(t, grandchild.Concurrency.WaitTimeout)
+	assert.Equal(t, 45, *grandchild.Concurrency.WaitTimeout)
 }
 
 func Test_setupConfig(t *testing.T) {
@@ -321,6 +425,41 @@ func Test_setupConfig(t *testing.T) {
 							Duration: defaultTimeout,
 						},
 						Environment: map[string]string{},
+					},
+				},
+			},
+		},
+		{
+			title: "the top level concurrency is inherited by tasks",
+			cfg: &domain.Config{
+				Concurrency: domain.Concurrency{
+					Group:       concurrencyGroup,
+					WaitTimeout: new(30),
+				},
+				Tasks: []domain.Task{
+					{
+						Name:   valFoo,
+						Script: valEnv,
+					},
+				},
+			},
+			exp: &domain.Config{
+				Concurrency: domain.Concurrency{
+					Group:       concurrencyGroup,
+					WaitTimeout: new(30),
+				},
+				Tasks: []domain.Task{
+					{
+						Name:   valFoo,
+						Script: valEnv,
+						Timeout: domain.Timeout{
+							Duration: defaultTimeout,
+						},
+						Environment: map[string]string{},
+						Concurrency: domain.Concurrency{
+							Group:       concurrencyGroup,
+							WaitTimeout: new(30),
+						},
 					},
 				},
 			},

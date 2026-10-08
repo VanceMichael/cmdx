@@ -45,6 +45,18 @@
         "name"
       ]
     },
+    "Concurrency": {
+      "properties": {
+        "group": {
+          "type": "string"
+        },
+        "wait_timeout": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "Config": {
       "properties": {
         "tasks": {
@@ -73,6 +85,9 @@
         },
         "timeout": {
           "$ref": "#/$defs/Timeout"
+        },
+        "concurrency": {
+          "$ref": "#/$defs/Concurrency"
         },
         "quiet": {
           "type": "boolean"
@@ -236,6 +251,9 @@
         },
         "timeout": {
           "$ref": "#/$defs/Timeout"
+        },
+        "concurrency": {
+          "$ref": "#/$defs/Concurrency"
         },
         "require": {
           "$ref": "#/$defs/Require"

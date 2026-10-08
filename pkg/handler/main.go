@@ -142,10 +142,11 @@ func mainAction(flags *LDFlags, args []string) func(*cli.Context) error {
 			quiet = &q
 		}
 		updateAppWithConfig(app, &cfg, &domain.GlobalFlags{
-			DryRun:     c.Bool("dry-run"),
-			Quiet:      quiet,
-			WorkingDir: workingDirFlag,
-		})
+		DryRun:     c.Bool("dry-run"),
+		Quiet:      quiet,
+		WorkingDir: workingDirFlag,
+		ConfigPath: cfgFilePath,
+	})
 		return app.RunContext(c.Context, args)
 	}
 }
@@ -395,6 +396,17 @@ func setupTask(task, base *domain.Task) error {
 		task.Timeout.KillAfter = base.Timeout.KillAfter
 	}
 
+	// The task level concurrency policy inherits the parent (or top level)
+	// policy field by field. An unset wait_timeout inherits the base value,
+	// while an explicit zero overrides it and means failing immediately.
+	if task.Concurrency.Group == "" {
+		task.Concurrency.Group = base.Concurrency.Group
+	}
+	if task.Concurrency.WaitTimeout == nil && base.Concurrency.WaitTimeout != nil {
+		v := *base.Concurrency.WaitTimeout
+		task.Concurrency.WaitTimeout = &v
+	}
+
 	for j, flag := range task.Flags {
 		if len(flag.InputEnvs) == 0 {
 			flag.InputEnvs = inputEnvs
@@ -473,6 +485,7 @@ func setupConfig(cfg *domain.Config) error {
 		ScriptEnvs:  cfg.ScriptEnvs,
 		Environment: cfg.Environment,
 		Timeout:     cfg.Timeout,
+		Concurrency: cfg.Concurrency,
 	}
 	for i, task := range cfg.Tasks {
 		if err := setupTask(&task, base); err != nil {

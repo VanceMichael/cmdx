@@ -1,6 +1,7 @@
 package action
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -60,6 +61,13 @@ func NewCommandAction(
 			envs = append(envs, k+"="+v)
 		}
 
+		// Render the concurrency group after flags, args, prompts and input
+		// environment variables are resolved, so the group can refer to them.
+		conc, err := buildConcurrency(&task, vars, gFlags.ConfigPath)
+		if err != nil {
+			return err
+		}
+
 		scr, err := tmpl.RenderTemplate(task.Script, vars)
 		if err != nil {
 			return fmt.Errorf("failed to parse the script - %s: %w", task.Script, err)
@@ -84,10 +92,43 @@ func NewCommandAction(
 					Duration:  time.Duration(task.Timeout.Duration) * time.Second,
 					KillAfter: time.Duration(task.Timeout.KillAfter) * time.Second,
 				},
-				Quiet:  quiet,
-				DryRun: gFlags.DryRun,
+				Concurrency: conc,
+				Quiet:       quiet,
+				DryRun:      gFlags.DryRun,
 			})
 	}
+}
+
+// buildConcurrency renders the task's concurrency policy into the executor
+// parameter. A statically empty group means locking is disabled and keeps the
+// existing lock-free behavior, while a configured group that renders to an
+// empty string is a configuration error.
+func buildConcurrency(task *domain.Task, vars map[string]any, configPath string) (*execute.Concurrency, error) {
+	if strings.TrimSpace(task.Concurrency.Group) == "" {
+		// A statically empty group disables locking and keeps the lock-free
+		// behavior, so both values are intentionally nil.
+		return nil, nil //nolint:nilnil
+	}
+	group, err := tmpl.RenderTemplate(task.Concurrency.Group, vars)
+	if err != nil {
+		return nil, fmt.Errorf("failed to render concurrency.group %q: %w", task.Concurrency.Group, err)
+	}
+	group = strings.TrimSpace(group)
+	if group == "" {
+		return nil, errors.New(
+			`concurrency.group is configured but rendered to an empty string; ` +
+				`refuse to run the task without the lock`)
+	}
+	waitTimeout := 0
+	if task.Concurrency.WaitTimeout != nil {
+		waitTimeout = *task.Concurrency.WaitTimeout
+	}
+	return &execute.Concurrency{
+		ConfigPath:  configPath,
+		Group:       group,
+		TaskName:    task.Name,
+		WaitTimeout: time.Duration(waitTimeout) * time.Second,
+	}, nil
 }
 
 func updateVarsByArgs(

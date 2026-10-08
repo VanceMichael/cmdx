@@ -18,6 +18,9 @@ var flagTypes = map[string]struct{}{ //nolint:gochecknoglobals
 }
 
 func Config(cfg *domain.Config) error {
+	if err := vConcurrency("the top level", cfg.Concurrency); err != nil {
+		return err
+	}
 	taskNames := make(map[string]struct{}, len(cfg.Tasks))
 	taskShortNames := make(map[string]struct{}, len(cfg.Tasks))
 	for _, task := range cfg.Tasks {
@@ -102,9 +105,21 @@ func vArg(taskName string, arg domain.Arg, argNames map[string]struct{}) error {
 	return nil
 }
 
+func vConcurrency(location string, conc domain.Concurrency) error {
+	if conc.WaitTimeout != nil && *conc.WaitTimeout < 0 {
+		return fmt.Errorf(
+			"concurrency.wait_timeout should be greater than or equal to 0: %s, wait_timeout: %d",
+			location, *conc.WaitTimeout)
+	}
+	return nil
+}
+
 func vTask(task domain.Task) error {
 	if task.Name == "" {
 		return errors.New("the task name is required")
+	}
+	if err := vConcurrency(`task: "`+task.Name+`"`, task.Concurrency); err != nil {
+		return err
 	}
 	flagNames := make(map[string]struct{}, len(task.Flags))
 	flagShortNames := make(map[string]struct{}, len(task.Flags))

@@ -47,6 +47,7 @@ ARGUMENTS:
 - Validate requirements
 - Validate flag and positional arguments
 - Timeout
+- Concurrency control (exclusive lock per group)
 - Bash and Zsh completion
 - Nested tasks (Sub tasks)
 
@@ -152,6 +153,7 @@ Please see [examples](examples).
 path | type | description | required | default
 --- | --- | --- | --- | ---
 .timeout | timeout | the task command timeout | false |
+.concurrency | concurrency | the top level concurrency policy inherited by tasks | false |
 .input_envs | []string | default environment variable binding | false | []
 .script_envs | []string | default environment variable binding | false | []
 .environment | map[string]string | top level environment variables | false | {}
@@ -170,6 +172,7 @@ task.script | string | the task command. This is run by `task.shell` | true |
 task.quiet | bool | task level default configuration whether the content of script is outputted | false |
 task.shell | []string | shell command to run the script | `["bash", "-euo", "pipefail", "-c"]` (falls back to `["sh", "-c"]` if bash isn't available)
 task.timeout | timeout | the task command timeout | false |
+task.concurrency | concurrency | the task concurrency policy. Unset fields inherit the parent (or top level) policy | false |
 task.require | require | requirement of task | false | {}
 task.tasks | []task | sub tasks | false | `[]`
 require.exec | []stringArray | required executable files | false | []
@@ -177,6 +180,8 @@ require.environment | []stringArray | required environment variables | false | [
 stringArray | array whose element is string or array of string | |
 timeout.duration | int | the task command timeout (second) | false | 36000 (10 hours)
 timeout.kill_after | int | the duration the kill signal is sent after `timeout.duration` | false | 0, which means the command isn't killed
+concurrency.group | string | the concurrency group template. If it is empty the lock is disabled; if it renders to an empty string the task fails before running | false |
+concurrency.wait_timeout | int | the maximum time to wait for the lock (second). 0 means failing immediately when the lock is held | false | 0
 flag.name | string | the flag name | true |
 flag.short | string | the flag short name | false |
 flag.usage | string | the flag usage | false | ""
@@ -338,6 +343,47 @@ timeout:
 tasks:
 - name: foo # the timeout.duration is 3
   script: sleep 100
+```
+
+### concurrency
+
+`cmdx` can prevent multiple cmdx processes from running scripts of the same concurrency group at the same time.
+This is useful when multiple CI jobs or terminals could start the same deployment or migration task concurrently.
+
+Set `concurrency.group` to enable an exclusive lock.
+Like `task.script`, `group` is parsed by Go's [text/template](https://golang.org/pkg/text/template/) package and [sprig](http://masterminds.github.io/sprig/) functions can be used.
+It is rendered after flags, positional arguments, prompts and input environment variables are resolved, so it can refer to their values.
+
+```yaml
+concurrency:
+  group: cmdx
+  wait_timeout: 30
+tasks:
+- name: deploy
+  concurrency:
+    group: "deploy-{{.env}}"
+  args:
+  - name: env
+    default: staging
+  script: scripts/deploy.sh {{.env}}
+```
+
+Behavior:
+
+* Processes that render the same `group` from the same configuration file are serialized: at most one process runs the script. Processes whose `group` differs still run in parallel.
+* If `concurrency.group` is unset or statically empty, no lock is used and the existing behavior is kept. If `group` is configured but renders to an empty string, `cmdx` fails before starting the script instead of running it without the lock.
+* `concurrency.wait_timeout` is the maximum time in seconds to wait for the lock. `0` (default) means failing immediately when another process holds the lock. If the context is cancelled (e.g. SIGINT) while waiting, `cmdx` stops waiting immediately and never starts the script.
+* The lock file is placed in the OS temporary directory and its path is derived from the canonical configuration file path and the rendered group. The lock file contains owner metadata (PID, hostname, task name, configuration file path, group, acquisition time) for diagnosis.
+* The lock is an OS-level file lock held from right before the subprocess starts until it exits, and is released on success, non-zero exit, task timeout and SIGINT. If the holder process is force-killed, the operating system releases the lock automatically; the leftover owner metadata is replaced atomically by the next owner. The lock file is never deleted, so a new owner is never affected.
+* With `--dry-run`, `cmdx` doesn't acquire, wait for, or write the lock.
+* The task level policy inherits the top level (and parent task) policy field by field. The task level value overrides the inherited value.
+
+When the lock can't be acquired, the error message includes the current owner and the lock file path:
+
+```console
+$ cmdx deploy production
+cmdx: waiting for the lock of the concurrency group "deploy-production" held by pid 20431 (wait timeout: 30s)
+the concurrency group "deploy-production" is locked by another cmdx process; owner: pid 20431 on myhost, task "deploy", acquired at 2026-10-08T10:20:31Z; lock file: /tmp/cmdx-3f8c....lock
 ```
 
 ### require
@@ -604,6 +650,7 @@ The following attributes are inherited from the parent tasks.
 * quiet
 * environment
 * timeout
+* concurrency
 * requires
 
 For example,

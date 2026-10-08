@@ -14,6 +14,7 @@ const (
 	testValPwd            = "pwd"
 	testTitleNormal       = "normal"
 	testTitleNameRequired = "name is required"
+	testConcurrencyGroup  = "deploy"
 )
 
 func Test_vUniqueName(t *testing.T) {
@@ -132,6 +133,49 @@ func TestConfig(t *testing.T) {
 						Short: "f",
 						Args: []domain.Arg{
 							{},
+						},
+					},
+				},
+			},
+			isErr: true,
+		},
+		{
+			title: "the top level concurrency is valid",
+			cfg: &domain.Config{
+				Concurrency: domain.Concurrency{
+					Group:       testConcurrencyGroup,
+					WaitTimeout: new(30),
+				},
+			},
+		},
+		{
+			title: "the top level wait_timeout is zero (fail immediately)",
+			cfg: &domain.Config{
+				Concurrency: domain.Concurrency{
+					Group:       testConcurrencyGroup,
+					WaitTimeout: new(0),
+				},
+			},
+		},
+		{
+			title: "the top level wait_timeout is negative",
+			cfg: &domain.Config{
+				Concurrency: domain.Concurrency{
+					Group:       testConcurrencyGroup,
+					WaitTimeout: new(-1),
+				},
+			},
+			isErr: true,
+		},
+		{
+			title: "the task wait_timeout is negative",
+			cfg: &domain.Config{
+				Tasks: []domain.Task{
+					{
+						Name: testValFoo,
+						Concurrency: domain.Concurrency{
+							Group:       testConcurrencyGroup,
+							WaitTimeout: new(-1),
 						},
 					},
 				},

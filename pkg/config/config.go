@@ -16,6 +16,9 @@ const configurationFileTemplate = `---
 # timeout:
 #   duration: 600
 #   kill_after: 30
+# concurrency:
+#   group: deploy
+#   wait_timeout: 30
 # input_envs:
 # - "{{.name}}"
 # script_envs:
